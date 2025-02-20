@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Motion Tetris</title>
+  <script src="p5.min.js"></script>
+  <script src="matter.min.js"></script>
+  <script src="sketch.js"></script>
+  <style>
+    body{
+      padding: 0;
+      margin: 0;
+    }
+    * {
+      padding: 0;
+      margin: 0;
+    }
+  </style>
+  <!--<style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #gameContainer {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+    }
+    .menu {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      z-index: 10;
+    }
+    .btn {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 15px 32px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 10px;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+    .instructions {
+      max-width: 80%;
+      margin: 20px;
+      text-align: center;
+    }
+    .tutorial {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 80%;
+      text-align: center;
+      z-index: 5;
+    }
+    .score {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: white;
+      font-size: 20px;
+      background-color: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .footer {
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+      background-color: rgba(0, 0, 0, 0.7);
+      color: white;
+      text-align: center;
+      padding: 10px 0;
+    }
+    .footer a {
+      color: #4CAF50;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <div id="mainMenu" class="menu">
+      <h1>Motion Tetris</h1>
+      <button id="playBtn" class="btn">Play</button>
+      <button id="howToPlayBtn" class="btn">How to Play</button>
+    </div>
+
+    <div id="howToPlay" class="menu" style="display: none;">
+      <h1>How to Play</h1>
+      <div class="instructions">
+        <p>
+          Tilt your device to move the falling boxes.
+        </p>
+        <p>
+          Align boxes in a row to score points.
+        </p>
+        <p>
+          Don't let the screen fill up!
+        </p>
+        <p>
+          The game uses your device's motion sensors - please allow permissions when prompted.
+        </p>
+      </div>
+      <button id="backBtn" class="btn">Back to Menu</button>
+    </div>
+
+    <div id="gameOver" class="menu" style="display: none;">
+      <h1>Game Over</h1>
+      <p id="finalScore">
+        Score: 0
+      </p>
+      <button id="restartBtn" class="btn">Play Again</button>
+      <button id="menuBtn" class="btn">Main Menu</button>
+    </div>
+
+    <div id="tutorial" class="tutorial" style="display: none;">
+      <p>
+        Tilt your device to align the boxes!
+      </p>
+      <button id="tutorialDismiss" class="btn">Got it!</button>
+    </div>
+
+    <div id="score" class="score" style="display: none;">
+      Score: 0
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="https://motiontetris.example.com">Motion Tetris - Play More Games</a>
+  </div>
+
+  <script>
+    let Engine = Matter.Engine;
+    let World = Matter.World;
+    let Bodies = Matter.Bodies;
+    let Body = Matter.Body;
+    let Events = Matter.Events;
+    let canvas, width, height;
+    function setup() {
+      canvas = createCanvas(windowWidth, windowHeight);
+      width = canvas.width;
+      height = canvas.height;
+      canvas.parent('gameContainer');
+
+      window.addEventListener("devicemotion", handleMotion);
+      window.addEventListener("deviceorientation", handleOrientation);
+
+      resetGame();
+    }
+    let engine, world;
+    let boxes = [];
+    let ground, leftWall, rightWall, ceiling;
+    let tiltX = 0;
+    let tiltY = 0;
+    let g = 1.5;
+    let gameActive = false;
+    let gameState = 'menu';
+    let score = 0;
+    let boxSpawnInterval;
+    let gridSize;
+    let accelerationXX = 0;
+    let accelerationYY = 0;
+    let lastUpdate = 0;
+    let mainMenu = document.getElementById('mainMenu');
+    let howToPlay = document.getElementById('howToPlay');
+    let gameOverScreen = document.getElementById('gameOver');
+    let tutorialElement = document.getElementById('tutorial');
+    let scoreElement = document.getElementById('score');
+
+    document.getElementById('playBtn').addEventListener('click', startGame);
+    document.getElementById('howToPlayBtn').addEventListener('click', showHowToPlay);
+    document.getElementById('backBtn').addEventListener('click', showMainMenu);
+    document.getElementById('restartBtn').addEventListener('click', startGame);
+    document.getElementById('menuBtn').addEventListener('click', showMainMenu);
+    document.getElementById('tutorialDismiss').addEventListener('click', dismissTutorial);
+
+    function showMainMenu() {
+      gameState = 'menu';
+      gameActive = false;
+      if (boxSpawnInterval) clearInterval(boxSpawnInterval);
+
+      mainMenu.style.display = 'flex';
+      howToPlay.style.display = 'none';
+      gameOverScreen.style.display = 'none';
+      tutorialElement.style.display = 'none';
+      scoreElement.style.display = 'none';
+    }
+
+    function showHowToPlay() {
+      mainMenu.style.display = 'none';
+      howToPlay.style.display = 'flex';
+    }
+
+    function startGame() {
+      resetGame();
+      gameState = 'playing';
+      gameActive = true;
+
+      mainMenu.style.display = 'none';
+      howToPlay.style.display = 'none';
+      gameOverScreen.style.display = 'none';
+      scoreElement.style.display = 'block';
+      setTimeout(() => {
+        if (gameState === 'playing') {
+          tutorialElement.style.display = 'block';
+        }
+      },
+        1000);
+
+      boxSpawnInterval = setInterval(addBox,
+        3000);
+    }
+
+    function dismissTutorial() {
+      tutorialElement.style.display = 'none';
+    }
+
+    function gameOver() {
+      gameState = 'gameOver';
+      gameActive = false;
+      if (boxSpawnInterval) clearInterval(boxSpawnInterval);
+
+      document.getElementById('finalScore').textContent = `Score: ${score}`;
+      gameOverScreen.style.display = 'flex';
+    }
+
+    function resetGame() {
+      score = 0;
+      updateScore();
+
+      if (engine) {
+        World.clear(world);
+        Engine.clear(engine);
+      }
+
+      engine = Engine.create();
+      world = engine.world;
+      engine.world.gravity.y = 0;
+
+      boxes = [];
+
+      gridSize = width / 8;
+
+      ground = Bodies.rectangle(width / 2, height + 10, width, 20, {
+        isStatic: true
+      });
+      leftWall = Bodies.rectangle(-10, height / 2, 20, height, {
+        isStatic: true
+      });
+      rightWall = Bodies.rectangle(width + 10, height / 2, 20, height, {
+        isStatic: true
+      });
+      ceiling = Bodies.rectangle(width / 2, -10, width, 20, {
+        isStatic: true
+      });
+
+      World.add(world, [ground, leftWall, rightWall, ceiling]);
+
+      Events.on(engine, 'afterUpdate', checkLines);
+    }
+function randomm(min, max){
+  return (min + Math.random() * (max - min));
+}
+    function addBox() {
+      if (!gameActive) return;
+
+      let boxWidth = gridSize;
+      let boxHeight = boxWidth;
+
+      let box = Bodies.rectangle(
+        randomm(boxWidth/2, width - boxWidth/2),
+        boxWidth/2,
+        boxWidth,
+        boxHeight,
+        {
+          friction: 0.3,
+          restitution: 0.1,
+          density: 0.8,
+          label: 'gameBox'
+        }
+      );
+
+      box.color = {
+        r: randomm(100, 255),
+        g: randomm(100, 255),
+        b: randomm(100, 255)
+      };
+
+      boxes.push(box);
+      World.add(world, box);
+
+      if (boxes.length > 50) {
+        gameOver();
+      }
+    }
+
+    function checkLines() {
+      if (!gameActive || boxes.length < 4) return;
+
+      let yPositions = {};
+      let threshold = gridSize * 0.3;
+
+      for (let box of boxes) {
+        let y = Math.round(box.position.y / threshold) * threshold;
+        if (!yPositions[y]) yPositions[y] = [];
+        yPositions[y].push(box);
+      }
+
+      for (let y in yPositions) {
+        let boxesInRow = yPositions[y];
+        if (boxesInRow.length >= 8) {
+          score += boxesInRow.length;
+          updateScore();
+
+          for (let box of boxesInRow) {
+            World.remove(world, box);
+            boxes = boxes.filter(b => b.id !== box.id);
+          }
+        }
+      }
+    }
+
+    function updateScore() {
+      scoreElement.textContent = `Score: ${score}`;
+    }
+
+    function draw() {
+      if (!gameActive) return;
+
+      background(20);
+      Engine.update(engine);
+
+      let currentTime = millis();
+      if (currentTime - lastUpdate > 50) {
+        updateBoxForces();
+        lastUpdate = currentTime;
+      }
+
+      drawBoxes();
+    }
+
+    function updateBoxForces() {
+      let gravityScale = 0.00005;
+
+      for (let box of boxes) {
+        if (accelerationX !== undefined && accelerationY !== undefined) {
+          Body.applyForce(box, box.position, {
+            x: accelerationX * -0.001,
+            y: accelerationY * -0.001
+          });
+        }
+
+        Body.applyForce(box, box.position, {
+          x: tiltX * gravityScale * g,
+          y: tiltY * gravityScale * g,
+        });
+      }
+    }
+
+    function drawBoxes() {
+      noStroke();
+      for (let box of boxes) {
+        fill(box.color.r, box.color.g, box.color.b);
+        beginShape();
+        for (let vtx of box.vertices) {
+          vertex(vtx.x, vtx.y);
+        }
+        endShape(CLOSE);
+      }
+    }
+
+    function handleMotion(event) {
+      accelerationXX = event.accelerationIncludingGravity.x;
+      accelerationYY = event.accelerationIncludingGravity.y;
+    }
+
+    function handleOrientation(event) {
+      tiltX = event.gamma;
+      tiltY = event.beta;
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+      gridSize = width / 8;
+
+      if (ground) {
+        Body.setPosition(ground, {
+          x: width / 2, y: height + 10
+        });
+        Body.setPosition(leftWall, {
+          x: -10, y: height / 2
+        });
+        Body.setPosition(rightWall, {
+          x: width + 10, y: height / 2
+        });
+        Body.setPosition(ceiling, {
+          x: width / 2, y: -10
+        });
+      }
+    }
+
+    function touchStarted() {
+      if (gameState === 'menu' || gameState === 'gameOver') return false;
+      return false;
+    }
+  </script>-->
+</body>
+</html>
